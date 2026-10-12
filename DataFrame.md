@@ -1,175 +1,228 @@
-# Telemetry Data Ingestion & Transformation: Raw to Analysis-Ready DataFrame
+# Zomato Bangalore Dataset: Raw Data to Analysis-Ready DataFrame
 
-This document explains the end-to-end data pipeline implemented in [`inspect_workflow_runs.py`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/inspect_workflow_runs.py), which ingests raw telemetry records from [`workflow_runs.csv`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/workflow_runs.csv) and transforms them into an optimized, analysis-ready pandas DataFrame.
+This document explains the end-to-end data engineering and inspection pipeline implemented in [`inspect_zomato.py`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/inspect_zomato.py), which ingests the 574 MB raw [`zomato.csv`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/zomato.csv) dataset (51,717 records) and transforms it into an optimized, analysis-ready pandas DataFrame (12,924 unique restaurant profiles, 1.7 MB memory).
 
 ---
 
 ## 1. Workflow Architecture Diagram
 
-The diagram below illustrates the end-to-end transformation workflow from raw CSV ingestion through inspection, data cleaning, feature engineering, and final analytical output:
-
 ```mermaid
 flowchart TD
-    A["Raw Telemetry CSV<br/>(workflow_runs.csv)"] --> B["Step 1: Load Data<br/>pd.read_csv()"]
-    B --> C["Step 2: Inspect Schema & Types<br/>df.info(), df.dtypes"]
-    B --> D["Step 3: Analyze Missing Data<br/>df.isnull().sum(), df.isnull().mean()"]
-    B --> E["Step 4: Inspect Status & Outcome<br/>df['status'].value_counts()"]
+    A["Raw Zomato Dataset<br/>(zomato.csv - 574 MB, 51,717 rows)"] --> B["Step 1: Ingest Data<br/>pd.read_csv('zomato.csv')"]
+    B --> C["Step 2: Schema & Memory Diagnostics<br/>df.info(memory_usage='deep')<br/>Memory Footprint: 552.1 MB"]
+    B --> D["Step 3: Analyze Missing Values & Anomalies<br/>- dish_liked: 54.3% missing<br/>- rate: '4.1/5', 'NEW', '-' anomalies<br/>- approx_cost: comma-formatted strings"]
+    B --> E["Step 4: Categorical & Status Inspection<br/>online_order, book_table, rest_type"]
     
-    C & D & E --> F["Step 5: Data Transformation & Feature Engineering"]
+    C & D & E --> F["Step 5: Cleaning & Transformation Pipeline"]
     
-    subgraph TransformationPipeline ["Transformation Pipeline (inspect_workflow_runs.py)"]
-        F1["1. Parse Timestamps<br/>pd.to_datetime(..., utc=True)"]
-        F2["2. Feature Engineering<br/>queue_latency_sec = started_at - created_at<br/>duration_sec = completed_at - started_at"]
-        F3["3. Categorical Encoding<br/>pipeline, status, trigger_event, conclusion"]
-        F4["4. Sanitize Nulls<br/>failure_reason.fillna('None / Not Failed')"]
-        F5["5. Downcast Numeric & String Types<br/>run_attempt -> int16, run_id -> string"]
+    subgraph TransformationPipeline ["Transformation Pipeline (inspect_zomato.py)"]
+        F1["1. Drop High-Overhead Text<br/>reviews_list, menu_item, url, phone, address"]
+        F2["2. Clean & Parse Rating<br/>Extract numerator from '4.1/5', cast to float64, 'NEW'/'-' -> NaN"]
+        F3["3. Clean Approx Cost<br/>Strip ',' from '1,200' -> cast to float64 INR"]
+        F4["4. Cast Booleans & Categories<br/>online_order, book_table -> boolean<br/>location, rest_type, type, city -> category"]
+        F5["5. Feature Engineering<br/>num_cuisines, approx_cost_per_person, is_highly_rated"]
+        F6["6. Multi-Zone Deduplication<br/>Remove 38,793 duplicate cross-city listings"]
         
-        F1 --> F2 --> F3 --> F4 --> F5
+        F1 --> F2 --> F3 --> F4 --> F5 --> F6
     end
     
     F --> TransformationPipeline
-    TransformationPipeline --> G["Analysis-Ready DataFrame<br/>(Memory Optimized & Typed)"]
-    G --> H["Step 6: Summary Statistics<br/>df.describe() & Visual Analytics"]
+    TransformationPipeline --> G["Analysis-Ready DataFrame<br/>(12,924 rows, 1.7 MB Memory — 99.7% Reduction)"]
+    G --> H["Step 6: Summary Statistics & Business Insights<br/>df.describe() & Groupby Analysis"]
 ```
 
 ---
 
 ## 2. Step-by-Step Code Explanation
 
-### Step 1: Loading Raw Telemetry CSV
+### Step 1: Loading Raw Zomato Dataset
 ```python
-df_raw = pd.read_csv(csv_path)
+df_raw = pd.read_csv('zomato.csv')
 ```
-- **What it does:** Reads comma-separated values from the disk into memory as an initial pandas `DataFrame`.
-- **Why it matters:** At this stage, pandas infers types heuristically: strings and ISO timestamps are loaded as generic `object` types, and IDs with numeric values are inferred as `int64`.
+- **What it does:** Loads the 51,717 raw restaurant records and 17 columns into memory.
+- **Why it matters:** The raw CSV includes rich restaurant metadata along with massive unstructured text columns (`reviews_list`, `menu_item`).
 
 ---
 
-### Step 2: Schema & Data Type Inspection
+### Step 2: Schema & Memory Diagnostics
 ```python
-df_raw.info()
-print(df_raw.dtypes)
+df_raw.info(memory_usage='deep')
 ```
-- **What it does:** Prints the total row count, column names, non-null counts, and data types (`dtypes`), as well as memory consumption.
-- **Key Observation:**
-  - `created_at`, `started_at`, and `completed_at` are stored as plain string `object` types, meaning date arithmetic and filtering cannot yet be performed.
-  - Low-cardinality discrete columns (e.g., `pipeline`, `status`) consume excessive memory as generic Python objects.
+- **What it does:** Displays data types, non-null counts, and accurate in-memory footprint.
+- **Key Findings:**
+  - 16 of the 17 columns are inferred as generic Python `object` strings.
+  - The raw dataset consumes **552.1 MB** of RAM in pandas due to string pointer overhead.
+  - Numeric columns like `rate` and `approx_cost(for two people)` are trapped in string representations.
 
 ---
 
-### Step 3: Analyzing Missing Data (Null Values)
+### Step 3: Missing Data & Anomaly Diagnosis
 ```python
 missing_summary = pd.DataFrame({
-    'Missing Values': df_raw.isnull().sum(),
-    'Percentage (%)': (df_raw.isnull().mean() * 100).round(2)
+    'Missing Count': df_raw.isnull().sum(),
+    'Missing (%)': (df_raw.isnull().mean() * 100).round(2)
 })
 ```
-- **What it does:** Quantifies missing data across every column both by absolute count and by percentage.
-- **Telemetry-Specific Null Patterns:**
-  - **Structural Nulls (Expected):** Workflows currently in `in_progress` or `queued` status have null `completed_at` and null `conclusion`. These are valid business states and should **not** be dropped.
-  - **Conditional Nulls (Expected):** `failure_reason` is populated only when `conclusion == 'failure'`. Successful and active runs legitimately have `NaN`.
-  - **Sensor/Metric Drops (Unplanned):** Missing `cpu_utilization_pct` in completed runs indicates telemetry reporting gaps from the worker agent.
+- **Missing Data Distribution:**
+  - `dish_liked`: **54.29%** missing (28,078 rows) — newer or lower-traffic restaurants do not have enough customer review volume.
+  - `rate`: **15.03%** missing (7,775 rows) + **2,208** records marked as `'NEW'` and **69** records marked as `'-'`.
+  - `phone`: **2.34%** missing (1,208 rows).
+  - `approx_cost(for two people)`: **0.67%** missing (346 rows).
+  - `location`, `rest_type`, `cuisines`: $<0.5\%$ missing.
+- **Data Anomalies Detected:**
+  - Ratings contain string suffix `'/5'` (e.g. `'4.1/5'`) with irregular spacing (`'3.9 /5'`).
+  - Costs contain thousands separators (e.g. `'1,200'`, `'1,500'`).
 
 ---
 
-### Step 4: Inspecting Status & Conclusion Values
+### Step 4: Categorical & Status Value Inspection
 ```python
-print(df_raw['status'].value_counts(dropna=False))
-print(df_raw['conclusion'].value_counts(dropna=False))
-print(df_raw['trigger_event'].value_counts(dropna=False))
+print(df_raw['online_order'].value_counts())
+print(df_raw['book_table'].value_counts())
+print(df_raw['rest_type'].value_counts().head(5))
+print(df_raw['listed_in(type)'].value_counts().head(5))
 ```
-- **What it does:** Calculates frequency distributions for discrete operational states.
-- **Why it matters:** 
-  - Verifies data consistency between lifecycle states (`status`: `completed`, `in_progress`, `queued`) and terminal outcomes (`conclusion`: `success`, `failure`, `cancelled`, `timed_out`).
-  - Including `dropna=False` ensures in-flight jobs without a conclusion are visible.
+- **Online Order:** 58.9% `Yes` (30,444) vs. 41.1% `No` (21,273).
+- **Table Booking:** Only 12.5% of venues support reservations (`Yes`: 6,449, `No`: 45,268).
+- **Dominant Restaurant Types:** `Quick Bites` (19,132), `Casual Dining` (10,330), and `Cafe` (3,732).
+- **Service Categories:** `Delivery` (25,942) and `Dine-out` (17,779).
 
 ---
 
 ### Step 5: Transforming Raw Data to Analysis-Ready DataFrame
 
-This is the core cleaning and feature engineering step:
-
-#### 1. Datetime Parsing with UTC Standardization
+#### 1. Pruning Unstructured Bloat Columns
 ```python
-timestamp_cols = ['created_at', 'started_at', 'completed_at']
-for col in timestamp_cols:
-    df_clean[col] = pd.to_datetime(df_clean[col], errors='coerce', utc=True)
+drop_unstructured = ['url', 'address', 'phone', 'reviews_list', 'menu_item']
+df_clean.drop(columns=[c for c in drop_unstructured if c in df_clean.columns], inplace=True)
 ```
-- Converts ISO 8601 strings into timezone-aware `datetime64[us, UTC]`.
-- Enables time delta operations and time-series aggregation.
+- Removes massive raw text arrays (`reviews_list` and `menu_item`) that are irrelevant for tabular metrics, instantly reducing memory from **552 MB** to **~15 MB**.
 
-#### 2. Feature Engineering: Latency & Duration
+#### 2. Parsing the Rating Column
 ```python
-# Queue latency: wait time before execution starts in seconds
-df_clean['queue_latency_sec'] = (df_clean['started_at'] - df_clean['created_at']).dt.total_seconds()
+def clean_rating(val):
+    if pd.isna(val) or val in ['NEW', '-']:
+        return np.nan
+    val_str = str(val).split('/')[0].strip()
+    try:
+        return float(val_str)
+    except ValueError:
+        return np.nan
 
-# Execution duration: active run time in seconds
-df_clean['duration_sec'] = (df_clean['completed_at'] - df_clean['started_at']).dt.total_seconds()
+df_clean['rating'] = df_clean['rate'].apply(clean_rating)
+df_clean.drop(columns=['rate'], inplace=True)
 ```
-- `queue_latency_sec`: Measures runner availability and queuing delays.
-- `duration_sec`: Quantifies true workload runtime, excluding queuing time.
+- Strips the `'/5'` string suffix and trims whitespace.
+- Maps non-numeric status strings (`'NEW'`, `'-'`) to standard `np.nan`.
+- Produces a continuous numeric `float64` rating between **1.8** and **4.9**.
 
-#### 3. Categorical Encoding for Low-Cardinality Fields
+#### 3. Standardizing Cost to Numeric INR
 ```python
-cat_cols = ['pipeline', 'trigger_event', 'status', 'conclusion']
-for col in cat_cols:
+def clean_cost(val):
+    if pd.isna(val):
+        return np.nan
+    val_str = str(val).replace(',', '').strip()
+    try:
+        return float(val_str)
+    except ValueError:
+        return np.nan
+
+df_clean['approx_cost_inr'] = df_clean['approx_cost(for two people)'].apply(clean_cost)
+df_clean.drop(columns=['approx_cost(for two people)'], inplace=True)
+```
+- Eliminates comma thousand-separators (`'1,200'` $\rightarrow$ `1200.0`).
+
+#### 4. Type Optimization: Booleans and Categories
+```python
+df_clean['has_online_order'] = df_clean['online_order'].map({'Yes': True, 'No': False}).astype('boolean')
+df_clean['has_table_booking'] = df_clean['book_table'].map({'Yes': True, 'No': False}).astype('boolean')
+df_clean.drop(columns=['online_order', 'book_table'], inplace=True)
+
+cat_columns = ['location', 'rest_type', 'listed_in(type)', 'listed_in(city)']
+for col in cat_columns:
     df_clean[col] = df_clean[col].astype('category')
 ```
-- Replaces heavy string pointers with compact integer category codes.
-- Dramatically lowers memory usage and speeds up `groupby()` operations.
+- Converts binary text flags to native pandas nullable booleans.
+- Encodes low-cardinality location and type fields as `category` to accelerate groupby performance.
 
-#### 4. Handling Conditional Nulls
+#### 5. Feature Engineering
 ```python
-df_clean['failure_reason'] = df_clean['failure_reason'].fillna('None / Not Failed')
-```
-- Replaces `NaN` with an explicit label so text filtering and grouping don't ignore successful runs.
+# Number of distinct cuisines
+df_clean['num_cuisines'] = df_clean['cuisines'].fillna('').apply(
+    lambda x: len([c.strip() for c in x.split(',') if c.strip()])
+).astype('int16')
 
-#### 5. ID & Numeric Type Casting
-```python
-df_clean['run_id'] = df_clean['run_id'].astype('string')
-df_clean['run_attempt'] = df_clean['run_attempt'].astype('int16')
+# Approx cost per single diner
+df_clean['approx_cost_per_person'] = (df_clean['approx_cost_inr'] / 2.0).round(2)
+
+# High-rating indicator (>= 4.0 out of 5.0)
+df_clean['is_highly_rated'] = (df_clean['rating'] >= 4.0)
 ```
-- Casts `run_id` to `string` so mathematical aggregations (e.g. `mean()`, `sum()`) are not accidentally computed on identifiers.
-- Downcasts `run_attempt` from 64-bit to 16-bit integers (`int16`), saving memory.
+
+#### 6. Multi-Zone Cross-Listing Deduplication
+```python
+df_clean.drop_duplicates(subset=['name', 'location', 'rest_type', 'cuisines'], inplace=True)
+```
+- **Why this is critical:** In Zomato's scraping data, the same restaurant is repeatedly listed across multiple delivery zones (`listed_in(city)`).
+- **Result:** Removes **38,793 duplicate entries**, leaving **12,924 unique physical restaurants**.
+- Reduces final memory to **1.7 MB** (a **99.7% total reduction** from 552.1 MB).
 
 ---
 
-### Step 6: Summary Telemetry Statistics
+### Step 6: Summary Analytical Metrics
+
 ```python
-numeric_summary = df_clean[['queue_latency_sec', 'duration_sec', 'cpu_utilization_pct', 'memory_used_mb']].describe().round(2)
+numeric_summary = df_clean[['rating', 'votes', 'approx_cost_inr', 'approx_cost_per_person', 'num_cuisines']].describe().round(2)
 print(numeric_summary)
 ```
-- **What it does:** Computes descriptive statistics (count, mean, standard deviation, quartiles, min, max) for numeric performance metrics.
-- **Application:** Identifies bottlenecks, runtime outliers, and resource usage anomalies.
+
+#### Distribution Statistics (12,924 Unique Restaurants):
+
+| Metric | Rating (out of 5.0) | Votes | Approx Cost for Two (INR) | Cost Per Person (INR) | Number of Cuisines |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Count** | 9,640 | 12,924 | 12,857 | 12,857 | 12,924 |
+| **Mean** | 3.63 | 184.14 | ₹487.62 | ₹243.81 | 2.33 |
+| **Median (50%)** | 3.70 | 25.00 | ₹400.00 | ₹200.00 | 2.00 |
+| **Min** | 1.80 | 0.00 | ₹40.00 | ₹20.00 | 0.00 |
+| **Max** | 4.90 | 16,345.00 | ₹6,000.00 | ₹3,000.00 | 8.00 |
+
+#### Business Insight: Online Ordering vs. Dining Performance:
+| Online Order Enabled | Mean Rating | Median Cost (INR) | Median Votes |
+| :--- | :--- | :--- | :--- |
+| **No (Dine-in only)** | 3.59 | ₹350.00 | 7 |
+| **Yes (Online delivery)** | 3.65 | ₹400.00 | 54 |
+
+Restaurants with online ordering attract **over 7.7x higher median customer review engagement** (54 vs. 7 votes).
 
 ---
 
-## 3. Data Schema: Before vs. After
+## 3. Schema: Before vs. After Comparison
 
-| Column Name | Raw Dtype | Analysis-Ready Dtype | Optimization Rationale |
+| Column Name | Raw Schema | Clean Analysis-Ready Schema | Transformation Logic |
 | :--- | :--- | :--- | :--- |
-| `run_id` | `int64` | `string` | Identifier, prevents numeric math |
-| `workflow_name` | `object` | `string` | Text string |
-| `pipeline` | `object` | `category` | Low cardinality category |
-| `trigger_event` | `object` | `category` | Low cardinality category |
-| `status` | `object` | `category` | Low cardinality lifecycle state |
-| `conclusion` | `object` | `category` | Low cardinality outcome |
-| `created_at` | `object` | `datetime64[us, UTC]` | Timezone-aware timestamp |
-| `started_at` | `object` | `datetime64[us, UTC]` | Timezone-aware timestamp |
-| `completed_at` | `object` | `datetime64[us, UTC]` | Timezone-aware timestamp |
-| `run_attempt` | `int64` | `int16` | Downcasted integer |
-| `cpu_utilization_pct`| `float64` | `float64` | Performance metric ($0.0 - 100.0$) |
-| `memory_used_mb` | `float64` | `float64` | Memory metric in MB |
-| `failure_reason` | `object` | `string` | Conditional text with explicit fill |
-| `queue_latency_sec` | *(new)* | `float64` | Derived queue wait duration |
-| `duration_sec` | *(new)* | `float64` | Derived active execution duration |
+| `name` | `object` / `str` | `string` | Preserved restaurant name |
+| `location` | `object` / `str` | `category` | Encoded as category |
+| `rest_type` | `object` / `str` | `category` | Encoded as category |
+| `cuisines` | `object` / `str` | `string` | Preserved cuisine list |
+| `dish_liked` | `object` / `str` | `string` | Preserved text list of dishes |
+| `listed_in(type)` | `object` / `str` | `category` | Service type category |
+| `listed_in(city)` | `object` / `str` | `category` | City zone category |
+| `rate` | `object` (`'4.1/5'`) | *Replaced by* `rating` (`float64`) | Numerator extracted, `'NEW'` $\rightarrow$ `NaN` |
+| `approx_cost(for two people)` | `object` (`'1,200'`) | *Replaced by* `approx_cost_inr` (`float64`) | Stripped commas, cast to float |
+| `online_order` | `object` (`'Yes'/'No'`) | *Replaced by* `has_online_order` (`boolean`) | Mapped to boolean |
+| `book_table` | `object` (`'Yes'/'No'`) | *Replaced by* `has_table_booking` (`boolean`) | Mapped to boolean |
+| `votes` | `int64` | `int64` | Numeric vote count |
+| `num_cuisines` | *(new)* | `int16` | Derived count of distinct cuisines |
+| `approx_cost_per_person` | *(new)* | `float64` | Derived `approx_cost_inr / 2` |
+| `is_highly_rated` | *(new)* | `bool` | Derived indicator (`rating >= 4.0`) |
+| `url`, `address`, `phone`, `reviews_list`, `menu_item` | `object` (Huge strings) | *Dropped* | Pruned to eliminate 535+ MB bloat |
 
 ---
 
 ## 4. How to Run the Pipeline
 
-Execute the script from the project folder:
+Run the inspection script from the project folder:
 
 ```powershell
-python inspect_workflow_runs.py
+python inspect_zomato.py
 ```
