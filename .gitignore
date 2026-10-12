@@ -1,0 +1,12 @@
+# Exclude large datasets exceeding GitHub's 100MB limit
+zomato.csv
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.venv/
+venv/
+ENV/
