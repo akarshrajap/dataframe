@@ -1,5 +1,5 @@
 """
-Generate realistic workflow telemetry runs with branch, workflow, dates, and outcomes.
+Generate a realistic, comprehensive workflow runs dataset for interactive telemetry visualization.
 """
 import pandas as pd
 import numpy as np
@@ -14,29 +14,27 @@ workflows = {
     'ml-service': ['feature_pipeline', 'model_evaluation', 'drift_monitoring'],
     'infra-ops': ['terraform_plan', 'backup_snapshot', 'cert_renewal']
 }
-branches = ['main', 'develop', 'feature/auth-service', 'feature/ui-refresh', 'release/v2.1', 'hotfix/db-locks']
 triggers = ['push', 'pull_request', 'schedule', 'workflow_dispatch']
 
 records = []
-base_time = pd.Timestamp('2026-10-05 00:00:00', tz='UTC')
+base_time = pd.Timestamp('2026-10-10 00:00:00', tz='UTC')
 
-for run_id in range(3001, 3121):
+for run_id in range(2001, 2081):
     pipe = np.random.choice(pipelines, p=[0.30, 0.25, 0.20, 0.15, 0.10])
     wf = np.random.choice(workflows[pipe])
-    branch = np.random.choice(branches, p=[0.35, 0.25, 0.15, 0.10, 0.10, 0.05])
     trig = np.random.choice(triggers, p=[0.40, 0.35, 0.15, 0.10])
     
-    # Random time in an 8-day window
-    offset_min = np.random.randint(0, 8 * 24 * 60)
+    # Random time in a 4-day window
+    offset_min = np.random.randint(0, 4 * 24 * 60)
     created_at = base_time + pd.Timedelta(minutes=offset_min)
     
-    # Queue latency: 4s to 90s
-    queue_sec = int(np.random.exponential(scale=22) + 4)
+    # Queue latency: 5s to 90s
+    queue_sec = int(np.random.exponential(scale=25) + 5)
     started_at = created_at + pd.Timedelta(seconds=queue_sec)
     
     # Outcome probabilities
     r = np.random.rand()
-    if r < 0.74:
+    if r < 0.72:
         status = 'completed'
         conclusion = 'success'
         fail_reason = 'None'
@@ -44,37 +42,37 @@ for run_id in range(3001, 3121):
         status = 'completed'
         conclusion = 'failure'
         fail_reasons = [
-            'TestAssertionError: auth_mock_token_invalid',
-            'CompilationError: typescript type mismatch in types.ts',
-            'DBLockTimeout: lock acquisition failed on table users',
+            'TestAssertionError: auth_mock_failed',
+            'CompilationError: typescript type mismatch',
+            'DBLockTimeout: lock acquisition failed',
             'OutOfMemoryError: worker killed by OOM killer',
-            'ConnectionRefused: redis host unreachable:6379'
+            'ConnectionRefused: redis host unreachable'
         ]
         fail_reason = np.random.choice(fail_reasons)
     elif r < 0.94:
         status = 'completed'
         conclusion = 'timed_out'
-        fail_reason = 'TimeoutExceeded: max step execution 3600s exceeded'
+        fail_reason = 'TimeoutExceeded: max step execution exceeded'
     elif r < 0.98:
         status = 'completed'
         conclusion = 'cancelled'
-        fail_reason = 'UserCancelled: aborted by newer commit'
+        fail_reason = 'UserCancelled: aborted by author commit'
     else:
         status = 'in_progress'
-        conclusion = 'running'
+        conclusion = np.nan
         fail_reason = 'None'
 
-    # Durations based on pipeline
+    # Duration depending on pipeline & conclusion
     if pipe == 'backend-api':
-        dur = np.random.normal(loc=175, scale=35)
+        dur = np.random.normal(loc=180, scale=40)
     elif pipe == 'frontend-web':
-        dur = np.random.normal(loc=115, scale=25)
+        dur = np.random.normal(loc=120, scale=30)
     elif pipe == 'data-warehouse':
-        dur = np.random.normal(loc=1150, scale=220)
+        dur = np.random.normal(loc=1200, scale=250)
     elif pipe == 'ml-service':
-        dur = np.random.normal(loc=1750, scale=350)
+        dur = np.random.normal(loc=1800, scale=400)
     else:
-        dur = np.random.normal(loc=85, scale=18)
+        dur = np.random.normal(loc=90, scale=20)
         
     dur = max(20, int(dur))
     if conclusion == 'timed_out':
@@ -83,19 +81,17 @@ for run_id in range(3001, 3121):
     completed_at = started_at + pd.Timedelta(seconds=dur) if status == 'completed' else pd.NaT
     dur_sec = dur if status == 'completed' else np.nan
     
-    cpu = round(min(100.0, max(5.0, np.random.normal(loc=56, scale=18))), 1)
-    mem = round(max(256.0, np.random.normal(loc=2048, scale=950)), 1)
-    commit_sha = f"{np.random.randint(0x1000000, 0xFFFFFFF):07x}"
+    # CPU & Memory metrics
+    cpu = round(min(100.0, max(5.0, np.random.normal(loc=55, scale=20))), 1)
+    mem = round(max(256.0, np.random.normal(loc=2048, scale=1024)), 1)
     
     records.append({
         'run_id': str(run_id),
-        'branch': branch,
-        'commit_sha': commit_sha,
         'pipeline': pipe,
         'workflow_name': wf,
         'trigger_event': trig,
         'status': status,
-        'conclusion': conclusion,
+        'conclusion': conclusion if pd.notna(conclusion) else 'running',
         'created_at': created_at.isoformat(),
         'started_at': started_at.isoformat(),
         'completed_at': completed_at.isoformat() if pd.notna(completed_at) else None,
@@ -108,4 +104,4 @@ for run_id in range(3001, 3121):
 
 df = pd.DataFrame(records).sort_values(by='created_at').reset_index(drop=True)
 df.to_csv('workflow_telemetry_runs.csv', index=False)
-print(f"Generated workflow_telemetry_runs.csv with {len(df)} runs across {len(branches)} branches.")
+print(f"Generated workflow_telemetry_runs.csv with {len(df)} runs.")
