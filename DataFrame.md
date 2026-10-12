@@ -219,61 +219,10 @@ Restaurants with online ordering attract **over 7.7x higher median customer revi
 
 ---
 
-## 4. Automated Validation Suite & Cleaning Decisions
+## 4. How to Run the Pipeline
 
-For production data pipelines, data quality must be programmatically verified before saving or training models. The validation pipeline is implemented in [`clean_and_validate.py`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/clean_and_validate.py) and detailed in [`CLEANING_DECISIONS.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/CLEANING_DECISIONS.md).
+Run the inspection script from the project folder:
 
-### Validation Rules Enforced:
-1. **Row & Feature Count:** Asserts non-empty dataset (>10,000 rows, >=15 columns).
-2. **Domain Boundary Check:** Asserts all valid ratings lie strictly in $[1.0, 5.0]$.
-3. **Positivity Check:** Asserts all valid costs are strictly positive (> INR 0).
-4. **Non-Negativity Check:** Asserts votes $\ge 0$.
-5. **Type Consistency:** Asserts `has_online_order` and `has_table_booking` are native `boolean` types.
-6. **Mathematical Consistency:** Asserts `approx_cost_per_person * 2 == approx_cost_inr`.
-7. **Uniqueness Check:** Asserts zero multi-zone duplicate physical restaurants.
-
-### Validated Dataset Export:
-- Exports validated records to [`zomato_clean_validated.csv`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/zomato_clean_validated.csv) (12,924 rows, 19 columns, ~2.3 MB).
-
----
-
----
-
-## 5. Aggregation & Key Performance Indicators (KPIs)
-
-Comprehensive business and operational metrics are computed by [`kpi_summary.py`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/kpi_summary.py) and documented in [`KPI_DEFINITIONS.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/KPI_DEFINITIONS.md).
-
-### Executive Compact KPI Table:
-| Pillar | KPI | Value | Context |
-| :--- | :--- | :--- | :--- |
-| **Market & Supply** | **Total Venues** | **12,924** | Unique physical establishments |
-| **Market & Supply** | **Online Ordering Adoption** | **53.6%** | 6,930 venues accepting delivery |
-| **Market & Supply** | **Table Booking Adoption** | **7.7%** | 1,000 venues supporting reservations |
-| **Quality & Sentiment** | **Average Rating (Mean)** | **3.63 / 5.0** | Market average (Std Dev: 0.43) |
-| **Quality & Sentiment** | **Median Rating** | **3.70 / 5.0** | 50th percentile satisfaction |
-| **Quality & Sentiment** | **High-Rating Share ($\ge 4.0$)** | **23.0%** | 2,220 top-tier establishments |
-| **Engagement & Reach** | **Total Feedback Votes** | **2,379,888** | Cumulative customer reviews |
-| **Engagement & Reach** | **Average Review Engagement**| **184.1** | Mean votes (Median: 25.0) |
-| **Commercial & Pricing**| **Avg Meal Cost (2 People)** | **INR 487.62** | Median: INR 400.00 |
-| **Commercial & Pricing**| **Avg Cost Per Person** | **INR 243.81** | Individual diner spend |
-
----
-
-## 6. How to Run the Scripts
-
-### 1. Basic Inspection & Diagnostics:
 ```powershell
 python inspect_zomato.py
 ```
-
-### 2. Full Cleaning, Feature Engineering & Automated Validation:
-```powershell
-python clean_and_validate.py
-```
-
-### 3. Compute Executive & Segment KPIs:
-```powershell
-python kpi_summary.py
-```
-
-
