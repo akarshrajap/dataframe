@@ -237,15 +237,43 @@ For production data pipelines, data quality must be programmatically verified be
 
 ---
 
-## 5. How to Run the Scripts
+---
 
-### Run Basic Inspection & Diagnostics:
+## 5. Aggregation & Key Performance Indicators (KPIs)
+
+Comprehensive business and operational metrics are computed by [`kpi_summary.py`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/kpi_summary.py) and documented in [`KPI_DEFINITIONS.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/KPI_DEFINITIONS.md).
+
+### Executive Compact KPI Table:
+| Pillar | KPI | Value | Context |
+| :--- | :--- | :--- | :--- |
+| **Market & Supply** | **Total Venues** | **12,924** | Unique physical establishments |
+| **Market & Supply** | **Online Ordering Adoption** | **53.6%** | 6,930 venues accepting delivery |
+| **Market & Supply** | **Table Booking Adoption** | **7.7%** | 1,000 venues supporting reservations |
+| **Quality & Sentiment** | **Average Rating (Mean)** | **3.63 / 5.0** | Market average (Std Dev: 0.43) |
+| **Quality & Sentiment** | **Median Rating** | **3.70 / 5.0** | 50th percentile satisfaction |
+| **Quality & Sentiment** | **High-Rating Share ($\ge 4.0$)** | **23.0%** | 2,220 top-tier establishments |
+| **Engagement & Reach** | **Total Feedback Votes** | **2,379,888** | Cumulative customer reviews |
+| **Engagement & Reach** | **Average Review Engagement**| **184.1** | Mean votes (Median: 25.0) |
+| **Commercial & Pricing**| **Avg Meal Cost (2 People)** | **INR 487.62** | Median: INR 400.00 |
+| **Commercial & Pricing**| **Avg Cost Per Person** | **INR 243.81** | Individual diner spend |
+
+---
+
+## 6. How to Run the Scripts
+
+### 1. Basic Inspection & Diagnostics:
 ```powershell
 python inspect_zomato.py
 ```
 
-### Run Full Cleaning, Feature Derivation & Validation Suite:
+### 2. Full Cleaning, Feature Engineering & Automated Validation:
 ```powershell
 python clean_and_validate.py
 ```
+
+### 3. Compute Executive & Segment KPIs:
+```powershell
+python kpi_summary.py
+```
+
 

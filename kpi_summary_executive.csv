@@ -1,0 +1,13 @@
+Category,KPI Name,Value,Benchmark / Context
+Market & Supply,Total Establishments,"12,924",Unique physical venues
+Market & Supply,Online Ordering Adoption,53.6%,"6,930 venues with delivery"
+Market & Supply,Table Reservation Rate,7.7%,"1,000 venues with booking"
+Market & Supply,Avg Menu Breadth,2.3,Distinct cuisines offered
+Quality & Sentiment,Average Rating (Mean),3.63 / 5.0,Std Dev: 0.43
+Quality & Sentiment,Median Rating,3.70 / 5.0,50th percentile
+Quality & Sentiment,High-Rating Share (>= 4.0),23.0%,"2,220 top-rated venues"
+Engagement & Reach,Total Review Feedback,"2,379,888",Cumulative customer votes
+Engagement & Reach,Avg Review Engagement,184.1,Median votes: 25
+Engagement & Reach,Avg Engagement Index,15.46,ln(1+votes) * rating
+Commercial & Pricing,Avg Meal Cost (2 People),INR 487.62,Median: INR 400
+Commercial & Pricing,Avg Cost Per Person,INR 243.81,Individual diner spend

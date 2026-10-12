@@ -1,0 +1,5 @@
+price_tier,Venue_Count,Online_Order_Pct,Table_Booking_Pct,Avg_Rating,High_Rating_Pct,Median_Cost_INR,Avg_Votes,Share_of_Total_Pct
+Budget,5264,46.3,0.2,3.55,7.7,250.0,44.8,40.7
+Moderate,5682,62.6,2.3,3.58,14.9,500.0,139.3,44.0
+Premium,1612,54.2,39.4,3.87,46.2,900.0,638.9,12.5
+Fine Dining,299,21.7,73.9,4.15,71.9,2000.0,1057.0,2.3
