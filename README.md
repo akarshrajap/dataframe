@@ -219,10 +219,33 @@ Restaurants with online ordering attract **over 7.7x higher median customer revi
 
 ---
 
-## 4. How to Run the Pipeline
+## 4. Automated Validation Suite & Cleaning Decisions
 
-Run the inspection script from the project folder:
+For production data pipelines, data quality must be programmatically verified before saving or training models. The validation pipeline is implemented in [`clean_and_validate.py`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/clean_and_validate.py) and detailed in [`CLEANING_DECISIONS.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/CLEANING_DECISIONS.md).
 
+### Validation Rules Enforced:
+1. **Row & Feature Count:** Asserts non-empty dataset (>10,000 rows, >=15 columns).
+2. **Domain Boundary Check:** Asserts all valid ratings lie strictly in $[1.0, 5.0]$.
+3. **Positivity Check:** Asserts all valid costs are strictly positive (> INR 0).
+4. **Non-Negativity Check:** Asserts votes $\ge 0$.
+5. **Type Consistency:** Asserts `has_online_order` and `has_table_booking` are native `boolean` types.
+6. **Mathematical Consistency:** Asserts `approx_cost_per_person * 2 == approx_cost_inr`.
+7. **Uniqueness Check:** Asserts zero multi-zone duplicate physical restaurants.
+
+### Validated Dataset Export:
+- Exports validated records to [`zomato_clean_validated.csv`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/zomato_clean_validated.csv) (12,924 rows, 19 columns, ~2.3 MB).
+
+---
+
+## 5. How to Run the Scripts
+
+### Run Basic Inspection & Diagnostics:
 ```powershell
 python inspect_zomato.py
 ```
+
+### Run Full Cleaning, Feature Derivation & Validation Suite:
+```powershell
+python clean_and_validate.py
+```
+
