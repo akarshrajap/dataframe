@@ -1,0 +1,13 @@
+services:
+  zomato-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: zomato-analysis-dashboard:latest
+    container_name: zomato_analytics_app
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0

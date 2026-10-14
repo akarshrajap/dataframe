@@ -1,0 +1,46 @@
+# ==============================================================================
+# Docker Ignore Configuration for Zomato Data Analysis & Dashboard
+# ==============================================================================
+
+# 1. Large Raw Datasets
+# Exclude the 574MB raw dataset; app.py loads zomato_clean_validated.csv (2.3MB)
+zomato.csv
+
+# 2. Version Control
+.git/
+.gitignore
+
+# 3. Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# 4. Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# 5. IDE & Editor Artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 6. Docker Artifacts
+Dockerfile*
+.dockerignore
+docker-compose*
+
+# 7. Operating System Artifacts
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# 8. Logs & Temporary Files
+*.log
+scratch/
