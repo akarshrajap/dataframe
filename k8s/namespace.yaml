@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zomato-analytics
+  labels:
+    app.kubernetes.io/name: zomato-analytics
+    app.kubernetes.io/part-of: zomato-data-platform
+    environment: local-lightweight

@@ -44,3 +44,9 @@ ehthumbs.db
 # 8. Logs & Temporary Files
 *.log
 scratch/
+
+# 9. Kubernetes & Deployment Scripts
+k8s/
+*.ps1
+*.sh
+KUBERNETES.md
