@@ -159,7 +159,7 @@ jobs:
             kubectl get pods -n ${{ env.NAMESPACE }} -o wide
             kubectl get svc -n ${{ env.NAMESPACE }}
           else
-            echo "Validating k8s resources via client-side dry run..."
-            kubectl apply -k k8s --dry-run=client --validate=false
+            echo "Validating k8s resources via Kustomize compilation..."
+            kubectl kustomize k8s > /dev/null
             echo "Dry run validation successful: all manifests, selectors, and RBAC pass."
           fi

@@ -239,7 +239,7 @@ deploy-k8s:
           kubectl get pods -n ${{ env.NAMESPACE }} -o wide
           kubectl get svc -n ${{ env.NAMESPACE }}
         else
-          kubectl apply -k k8s --dry-run=client --validate=false
+          kubectl kustomize k8s > /dev/null
         fi
 ```
 
