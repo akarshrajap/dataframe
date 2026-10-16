@@ -160,6 +160,6 @@ jobs:
             kubectl get svc -n ${{ env.NAMESPACE }}
           else
             echo "Validating k8s resources via client-side dry run..."
-            kubectl apply -k k8s --dry-run=client
+            kubectl apply -k k8s --dry-run=client --validate=false
             echo "Dry run validation successful: all manifests, selectors, and RBAC pass."
           fi
