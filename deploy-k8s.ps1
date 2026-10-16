@@ -8,8 +8,10 @@
 
 [CmdletBinding()]
 param (
+    [switch]$SkipTests,
     [switch]$SkipBuild,
-    [switch]$PortForward
+    [switch]$PortForward,
+    [string]$ImageTag = "latest"
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,10 +43,28 @@ try {
     exit 1
 }
 
+# 2. Quality Gate & Automated Validation
+if (-not $SkipTests) {
+    Write-Host "`n[Quality Gate] Running Flake8 and Pytest validation..." -ForegroundColor Yellow
+    python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Linting validation failed. Aborting deployment."
+        exit $LASTEXITCODE
+    }
+    python -m pytest -v tests/
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Test suite validation failed. Aborting deployment."
+        exit $LASTEXITCODE
+    }
+    Write-Host "Quality gate passed: All syntax and test validations succeeded." -ForegroundColor Green
+} else {
+    Write-Host "`n[Quality Gate] Skipping tests (-SkipTests specified)..." -ForegroundColor Gray
+}
+
 # 3. Build Docker Image (if not skipped)
 if (-not $SkipBuild) {
-    Write-Host "`n[2/5] Building Docker image 'zomato-analysis-dashboard:latest'..." -ForegroundColor Yellow
-    docker build -t zomato-analysis-dashboard:latest .
+    Write-Host "`n[2/5] Building Docker image 'zomato-analysis-dashboard:$ImageTag'..." -ForegroundColor Yellow
+    docker build -t "zomato-analysis-dashboard:$ImageTag" -t "zomato-analysis-dashboard:latest" .
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Docker build failed."
         exit $LASTEXITCODE

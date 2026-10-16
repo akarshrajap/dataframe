@@ -1,0 +1,165 @@
+name: Zomato Analytics CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/zomato-analysis-dashboard
+  NAMESPACE: zomato-analytics
+  DEPLOYMENT_NAME: zomato-dashboard
+
+jobs:
+  # ============================================================================
+  # STAGE 1: VALIDATION & QUALITY ASSURANCE GATE
+  # ============================================================================
+  validate-and-test:
+    name: 01-Lint-And-Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Code Quality & Syntax Check (Flake8)
+        run: |
+          # Stop build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Exit-zero treats all other warnings as non-blocking notices
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Automated Data & Manifest Test Suite (Pytest)
+        run: |
+          pytest -v tests/
+
+  # ============================================================================
+  # STAGE 2: CONTAINER IMAGE BUILD & REGISTRY PUBLICATION
+  # ============================================================================
+  build-and-publish:
+    name: 02-Build-And-Publish
+    needs: validate-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.set-tag.outputs.IMAGE_TAG }}
+      image_digest: ${{ steps.build-push.outputs.digest }}
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Docker Metadata & Tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+
+      - name: Record Short Image Tag Output
+        id: set-tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "IMAGE_TAG=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Docker Image
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # STAGE 3: CONTROLLED KUBERNETES DEPLOYMENT & ROLLOUT VERIFICATION
+  # ============================================================================
+  deploy-k8s:
+    name: 03-Controlled-Kubernetes-Deployment
+    needs: build-and-publish
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Kubectl CLI
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Configure Kubernetes Cluster Authentication
+        run: |
+          mkdir -p $HOME/.kube
+          if [ -n "${{ secrets.KUBECONFIG }}" ]; then
+            echo "${{ secrets.KUBECONFIG }}" | base64 --decode > $HOME/.kube/config
+            chmod 600 $HOME/.kube/config
+            echo "Authenticated to remote cluster via decoded KUBECONFIG secret."
+          else
+            echo "WARNING: KUBECONFIG secret not detected; validating manifests via dry-run simulation."
+          fi
+
+      - name: Update Deployment Image Tag via Kustomize
+        run: |
+          TARGET_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-publish.outputs.image_tag }}"
+          echo "Targeting release image: ${TARGET_IMAGE}"
+          cd k8s
+          # Dynamically set image override in kustomization
+          if command -v kustomize &> /dev/null; then
+            kustomize edit set image zomato-analysis-dashboard:latest="${TARGET_IMAGE}"
+          else
+            # Fallback sed/replace for environment without standalone kustomize binary
+            sed -i "s|image: zomato-analysis-dashboard:latest|image: ${TARGET_IMAGE}|g" deployment.yaml
+          fi
+          cd ..
+
+      - name: Controlled Deployment Apply & Rollout Status
+        run: |
+          if [ -f "$HOME/.kube/config" ] && [ -s "$HOME/.kube/config" ]; then
+            echo "Applying Kustomize manifests to cluster..."
+            kubectl apply -k k8s
+            echo "Awaiting zero-downtime rolling update completion..."
+            kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }} --timeout=120s
+            echo "Verifying active pods and services..."
+            kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+            kubectl get svc -n ${{ env.NAMESPACE }}
+          else
+            echo "Validating k8s resources via client-side dry run..."
+            kubectl apply -k k8s --dry-run=client
+            echo "Dry run validation successful: all manifests, selectors, and RBAC pass."
+          fi

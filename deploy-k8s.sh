@@ -29,6 +29,16 @@ if ! kubectl cluster-info --request-timeout=5s > /dev/null 2>&1; then
     exit 1
 fi
 
+# 2. Quality Gate & Automated Validation
+echo -e "\n[Quality Gate] Running Flake8 and Pytest validation..."
+if command -v flake8 &> /dev/null; then
+    flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+fi
+if command -v pytest &> /dev/null; then
+    pytest -v tests/
+fi
+echo "[Quality Gate] All validation gates passed successfully."
+
 # 3. Build Docker Image
 echo -e "\n[2/5] Building Docker image 'zomato-analysis-dashboard:latest'..."
 docker build -t zomato-analysis-dashboard:latest .

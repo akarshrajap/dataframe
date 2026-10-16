@@ -276,4 +276,24 @@ python clean_and_validate.py
 python kpi_summary.py
 ```
 
+### 4. Run Automated Test Suite:
+```powershell
+pytest -v tests/
+```
 
+### 5. Deploy to Kubernetes with Automated Quality Gates:
+```powershell
+.\deploy-k8s.ps1
+```
+
+---
+
+## 7. CI/CD Pipeline & Kubernetes Orchestration
+
+* **Continuous Integration**: Powered by GitHub Actions ([`.github/workflows/ci-cd.yml`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/.github/workflows/ci-cd.yml)), automatically executing Flake8 linting, dataset schema verification, and PyYAML manifest integrity checks.
+* **Continuous Delivery**: Container builds run via Docker Buildx with layer caching and publish tagged releases (`:latest`, `:sha-<commit>`) to GitHub Container Registry (`ghcr.io`).
+* **Controlled Deployment**: Triggers automated rolling updates, applying Kustomize manifests to the Kubernetes cluster and enforcing zero-downtime health gates via `kubectl rollout status`.
+* **Documentation Guides**:
+  * Complete CI/CD architecture and runbooks: [`CICD_PIPELINE.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/CICD_PIPELINE.md)
+  * Lightweight Kubernetes orchestration deep-dive: [`KUBERNETES.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/KUBERNETES.md)
+  * Docker containerization specifications: [`docker.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/docker.md)
