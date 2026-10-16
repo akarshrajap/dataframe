@@ -58,7 +58,7 @@ jobs:
     runs-on: self-hosted
     defaults:
       run:
-        shell: bash
+        shell: powershell
     outputs:
       image_tag: ${{ steps.set-tag.outputs.IMAGE_TAG }}
     steps:
@@ -68,24 +68,25 @@ jobs:
       - name: Compute Semantic Image Tag
         id: set-tag
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "IMAGE_TAG=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "Calculated Docker Image Tag: sha-${SHORT_SHA}"
+          $shortSha = ("${{ github.sha }}").Substring(0, 7)
+          $imageTag = "sha-$shortSha"
+          "IMAGE_TAG=$imageTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Calculated Docker Image Tag: $imageTag"
 
       - name: Build Image in Docker Desktop Engine
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          IMAGE_TAG="sha-${SHORT_SHA}"
-          echo "=========================================================="
-          echo "Building image in Docker Desktop daemon..."
-          echo "Target Image: ${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
-          echo "=========================================================="
-          docker build \
-            -t ${{ env.IMAGE_NAME }}:${IMAGE_TAG} \
-            -t ${{ env.IMAGE_NAME }}:latest \
+          $shortSha = ("${{ github.sha }}").Substring(0, 7)
+          $imageTag = "sha-$shortSha"
+          Write-Host "=========================================================="
+          Write-Host "Building Docker image directly in Docker Desktop daemon..."
+          Write-Host "Target Image: ${{ env.IMAGE_NAME }}:$imageTag and ${{ env.IMAGE_NAME }}:latest"
+          Write-Host "=========================================================="
+          docker build `
+            -t "${{ env.IMAGE_NAME }}:$imageTag" `
+            -t "${{ env.IMAGE_NAME }}:latest" `
             .
-          echo "Verifying image in Docker Desktop local cache..."
-          docker images | grep "${{ env.IMAGE_NAME }}"
+          Write-Host "`nVerifying created image in Docker Desktop local cache:"
+          docker images | Select-String "${{ env.IMAGE_NAME }}"
 
   # ============================================================================
   # STAGE 3: CONTROLLED KUBERNETES DEPLOYMENT & ROLLOUT VERIFICATION
@@ -97,36 +98,40 @@ jobs:
     runs-on: self-hosted
     defaults:
       run:
-        shell: bash
+        shell: powershell
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
       - name: Verify Cluster Connectivity
         run: |
-          echo "Verifying connection to Docker Desktop Kubernetes cluster..."
+          Write-Host "Verifying connection to Docker Desktop Kubernetes cluster..."
           kubectl cluster-info
           kubectl get nodes
 
       - name: Update Deployment Image Specification
         run: |
-          TARGET_IMAGE="${{ env.IMAGE_NAME }}:${{ needs.build-docker-desktop.outputs.image_tag }}"
-          echo "Updating deployment target image to: ${TARGET_IMAGE}"
-          cd k8s
-          sed -i "s|image: ${{ env.IMAGE_NAME }}:.*|image: ${TARGET_IMAGE}|g" deployment.yaml
-          cd ..
+          $targetImage = "${{ env.IMAGE_NAME }}:${{ needs.build-docker-desktop.outputs.image_tag }}"
+          Write-Host "Updating deployment target image to: $targetImage"
+          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} "dashboard=$targetImage" -n ${{ env.NAMESPACE }}
 
       - name: Apply Kubernetes Manifests & Verify Zero-Downtime Rollout
         run: |
-          echo "Applying Kustomize manifests to cluster..."
+          Write-Host "Applying Kustomize manifests to cluster..."
           kubectl apply -k k8s
-          echo "Awaiting zero-downtime rolling update completion..."
+          Write-Host "Awaiting zero-downtime rolling update completion..."
           kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }} --timeout=120s
-          echo "Verifying active pods and exposed services..."
+          Write-Host "`nActive Pods in namespace '${{ env.NAMESPACE }}':"
           kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+          Write-Host "`nExposed Services:"
           kubectl get svc -n ${{ env.NAMESPACE }}
 
       - name: Application Health Probe Validation
         run: |
-          echo "Testing active pod HTTP health endpoint..."
-          curl -s -f http://localhost:8501/_stcore/health || echo "Health check ping complete"
+          Write-Host "Testing active pod HTTP health endpoint..."
+          try {
+            $response = Invoke-RestMethod -Uri "http://localhost:8501/_stcore/health" -TimeoutSec 5
+            Write-Host "Health probe returned: $response"
+          } catch {
+            Write-Host "Health check response notice: $_"
+          }
