@@ -29,6 +29,19 @@ st.set_page_config(
 # Polished modern CSS styling
 st.markdown("""
 <style>
+    html, body, .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewContainer"] > .main,
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"],
+    .main,
+    .block-container {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+    }
+    header[data-testid="stHeader"] {
+        background-color: transparent !important;
+    }
     .main-header {
         font-size: 2.2rem;
         font-weight: 700;
@@ -219,7 +232,7 @@ filtered_df = filter_zomato_data(
 # -----------------------------------------------------------------------------
 # 4. DASHBOARD HEADER & EXECUTIVE KPI METRIC CARDS
 # -----------------------------------------------------------------------------
-st.markdown('<div class="main-header">🍽️ Zomato Restaurant Intelligence Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🍽️ Zomato2 Restaurant Intelligence Dashboard</div>', unsafe_allow_html=True)
 st.markdown(
     f'<div class="sub-header">Analyzing dining economics, customer ratings, and channel fulfillment across Bangalore | Filtered: <b>{len(filtered_df):,}</b> of {len(df_raw):,} establishments</div>',
     unsafe_allow_html=True
