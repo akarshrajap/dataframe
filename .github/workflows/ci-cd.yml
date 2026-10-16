@@ -109,15 +109,12 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
-      - name: Update Deployment Image Specification
+      - name: Apply Kubernetes Manifests & Deploy Image
         run: |
           $targetImage = "${{ env.IMAGE_NAME }}:${{ needs.build-docker-desktop.outputs.image_tag }}"
           Write-Host "Updating deployment target image to: $targetImage"
-          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} "dashboard=$targetImage" -n ${{ env.NAMESPACE }}
-
-      - name: Apply Kubernetes Manifests & Verify Zero-Downtime Rollout
-        run: |
-          Write-Host "Applying Kustomize manifests to cluster..."
+          (Get-Content k8s/deployment.yaml) -replace 'image: zomato-analysis-dashboard:.*', "image: $targetImage" | Set-Content k8s/deployment.yaml
+          Write-Host "Applying Kustomize manifests to cluster (ensuring namespace, config, services, and deployment exist)..."
           kubectl apply -k k8s
           Write-Host "Awaiting zero-downtime rolling update completion..."
           kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }} --timeout=120s

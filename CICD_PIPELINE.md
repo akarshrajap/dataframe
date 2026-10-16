@@ -100,7 +100,8 @@ flowchart TD
 data_analysis/
 ├── .github/
 │   └── workflows/
-│       └── ci-cd.yml             # GitHub Actions CI/CD Pipeline definition
+│       └── ci-cd.yml             # GitHub Actions CI/CD Pipeline definition (Docker Desktop native)
+├── start-runner.ps1              # Launch GitHub Actions self-hosted runner agent
 ├── tests/
 │   ├── test_data_validation.py   # Dataset schema, data types & KPI tests
 │   └── test_k8s_manifests.py     # Kubernetes manifest structure & probe tests
@@ -113,6 +114,7 @@ data_analysis/
 │   └── kustomization.yaml        # Kustomize manifest bundle
 ├── Dockerfile                    # Multi-stage, non-root Streamlit container
 ├── deploy-k8s.ps1                # Automated Windows PowerShell deployment pipeline
+├── cleanup-k8s.ps1               # Automated cluster cleanup script
 ├── deploy-k8s.sh                 # Automated Linux/macOS deployment pipeline
 ├── requirements.txt              # Application runtime dependencies
 ├── requirements-dev.txt          # CI/CD and testing dependencies
@@ -122,24 +124,24 @@ data_analysis/
 
 ---
 
-## 4. GitHub Secret Configuration for Remote Deployment
+## 4. Self-Hosted Runner & Docker Desktop Engine Integration
 
-To connect your remote GitHub Actions workflow to a reachable Kubernetes training cluster:
+The pipeline leverages a **self-hosted GitHub Actions runner** residing on the Windows host machine to directly bridge GitHub repository triggers with local **Docker Desktop** and the **Kubernetes** cluster:
 
-1. Obtain your cluster's kubeconfig file.
-2. Encode the kubeconfig in base64:
+### 1. Launching the Runner Daemon
+Execute the runner launcher script:
+```powershell
+.\start-runner.ps1
+```
+The runner authenticates with GitHub repository `akarshrajap/dataframe` and listens for push and pull request webhook events.
+
+### 2. Execution Flow on Push to `main`
+1. **Stage 1 (Cloud Runner `ubuntu-latest`)**: Runs Flake8 syntax checks and Pytest suite.
+2. **Stage 2 (Local Runner `self-hosted`)**: Checks out code, computes the commit short SHA, and compiles the container image directly into the local Docker Desktop daemon:
    ```powershell
-   # Windows PowerShell:
-   [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$HOME\.kube\config"))
+   docker build -t zomato-analysis-dashboard:sha-<short-sha> -t zomato-analysis-dashboard:latest .
    ```
-   ```bash
-   # Linux/macOS:
-   cat ~/.kube/config | base64 -w 0
-   ```
-3. Navigate to **GitHub Repository** -> **Settings** -> **Secrets and variables** -> **Actions**.
-4. Click **New repository secret**:
-   * **Name**: `KUBECONFIG`
-   * **Value**: Paste the base64-encoded string.
+3. **Stage 3 (Local Runner `self-hosted`)**: Patches `k8s/deployment.yaml` with `zomato-analysis-dashboard:sha-<short-sha>`, applies Kustomize manifests (`kubectl apply -k k8s`), and monitors rolling update completion with zero downtime.
 
 ---
 

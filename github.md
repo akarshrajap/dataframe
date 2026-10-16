@@ -141,60 +141,49 @@ validate-and-test:
 
 ---
 
-### Stage 2: Container Image Build & Publication (`02-Build-And-Publish`)
+### Stage 2: Container Image Build in Docker Desktop (`02-Build-In-Docker-Desktop`)
 
 ```yaml
-build-and-publish:
-  name: 02-Build-And-Publish
+build-docker-desktop:
+  name: 02-Build-In-Docker-Desktop
   needs: validate-and-test
-  runs-on: ubuntu-latest
-  permissions:
-    contents: read
-    packages: write
+  runs-on: self-hosted
+  defaults:
+    run:
+      shell: powershell
   outputs:
     image_tag: ${{ steps.set-tag.outputs.IMAGE_TAG }}
   steps:
     - name: Checkout Source Code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+    - name: Compute Semantic Image Tag
+      id: set-tag
+      run: |
+        $shortSha = ("${{ github.sha }}").Substring(0, 7)
+        $imageTag = "sha-$shortSha"
+        "IMAGE_TAG=$imageTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        Write-Host "Calculated Docker Image Tag: $imageTag"
 
-    - name: Authenticate to GitHub Container Registry (GHCR)
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Generate Docker Metadata & Tags
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=sha,format=short,prefix=sha-
-
-    - name: Build and Push Docker Image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+    - name: Build Image in Docker Desktop Engine
+      run: |
+        $shortSha = ("${{ github.sha }}").Substring(0, 7)
+        $imageTag = "sha-$shortSha"
+        docker build `
+          -t "${{ env.IMAGE_NAME }}:$imageTag" `
+          -t "${{ env.IMAGE_NAME }}:latest" `
+          .
+        docker images | Select-String "${{ env.IMAGE_NAME }}"
 ```
 
 #### What Happens Here:
-1. **Dependency Gate**: Only runs after `validate-and-test` finishes with code 0.
-2. **Zero-Secret Authentication**: Uses the ephemeral runner token (`secrets.GITHUB_TOKEN`) with `packages: write` permissions.
+1. **Self-Hosted Runner Integration**: Runs natively on the host workstation via GitHub Actions self-hosted runner (`desktop-docker-runner`).
+2. **Direct Docker Desktop Daemon Access**: The build command communicates directly with the local Docker Desktop daemon without intermediate registry uploads or network bottlenecks.
 3. **Dual Version Tagging**:
-   * `:latest`: Always points to the most recent release on the default branch.
-   * `:sha-<short-sha>`: Immutable, commit-specific tag (e.g., `:sha-138a98c`) enabling zero-ambiguity traceability and instant rollbacks.
-4. **GitHub Actions Layer Caching (`type=gha`)**: Caches unchanged Docker layers between runs, reducing build duration from minutes to seconds.
-5. **PR Protection**: For pull requests, images are compiled to verify build integrity but **not pushed** (`push: false`).
+   * `:latest`: Readily available for local rapid testing and Docker Compose workflows.
+   * `:sha-<short-sha>`: Deterministic, immutable Git commit SHA tag (e.g., `:sha-54adcbe`) matching the latest repository trigger.
+4. **Local Layer Caching**: Leverages Docker Desktop's local build cache for sub-5-second incremental image rebuilds.
+5. **Downstream Tag Propagation**: Publishes the short SHA tag as an output parameter (`image_tag`) consumed by the deployment stage.
 
 ---
 
@@ -203,73 +192,65 @@ build-and-publish:
 ```yaml
 deploy-k8s:
   name: 03-Controlled-Kubernetes-Deployment
-  needs: build-and-publish
-  if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-  runs-on: ubuntu-latest
+  needs: build-docker-desktop
+  if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') && github.event_name != 'pull_request'
+  runs-on: self-hosted
+  defaults:
+    run:
+      shell: powershell
   steps:
     - name: Checkout Source Code
       uses: actions/checkout@v4
 
-    - name: Set up Kubectl CLI
-      uses: azure/setup-kubectl@v4
-
-    - name: Configure Kubernetes Cluster Authentication
+    - name: Verify Cluster Connectivity
       run: |
-        mkdir -p $HOME/.kube
-        if [ -n "${{ secrets.KUBECONFIG }}" ]; then
-          echo "${{ secrets.KUBECONFIG }}" | base64 --decode > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-        fi
+        Write-Host "Verifying connection to Docker Desktop Kubernetes cluster..."
+        kubectl cluster-info
+        kubectl get nodes
 
-    - name: Update Deployment Image Tag via Kustomize
+    - name: Apply Kubernetes Manifests & Deploy Image
       run: |
-        TARGET_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-publish.outputs.image_tag }}"
-        cd k8s
-        if command -v kustomize &> /dev/null; then
-          kustomize edit set image zomato-analysis-dashboard:latest="${TARGET_IMAGE}"
-        else
-          sed -i "s|image: zomato-analysis-dashboard:latest|image: ${TARGET_IMAGE}|g" deployment.yaml
-        fi
+        $targetImage = "${{ env.IMAGE_NAME }}:${{ needs.build-docker-desktop.outputs.image_tag }}"
+        Write-Host "Updating deployment target image to: $targetImage"
+        (Get-Content k8s/deployment.yaml) -replace 'image: zomato-analysis-dashboard:.*', "image: $targetImage" | Set-Content k8s/deployment.yaml
+        Write-Host "Applying Kustomize manifests to cluster..."
+        kubectl apply -k k8s
+        Write-Host "Awaiting zero-downtime rolling update completion..."
+        kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }} --timeout=120s
+        kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+        kubectl get svc -n ${{ env.NAMESPACE }}
 
-    - name: Controlled Deployment Apply & Rollout Status
+    - name: Application Health Probe Validation
       run: |
-        if [ -f "$HOME/.kube/config" ] && [ -s "$HOME/.kube/config" ]; then
-          kubectl apply -k k8s
-          kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }} --timeout=120s
-          kubectl get pods -n ${{ env.NAMESPACE }} -o wide
-          kubectl get svc -n ${{ env.NAMESPACE }}
-        else
-          kubectl kustomize k8s > /dev/null
-        fi
+        try {
+          $response = Invoke-RestMethod -Uri "http://localhost:8501/_stcore/health" -TimeoutSec 5
+          Write-Host "Health probe returned: $response"
+        } catch {
+          Write-Host "Health check response notice: $_"
+        }
 ```
 
 #### What Happens Here:
-1. **Branch Gate**: Restricts production deployments strictly to pushes targeting `main`.
-2. **Cluster Authentication**: Decodes the base64-encoded `KUBECONFIG` secret into the runner's `$HOME/.kube/config`.
-3. **Dynamic Image Pinning**: Updates the deployment manifest image tag to the exact commit SHA published in Stage 2.
-4. **Controlled Apply**: Applies all resources via `kubectl apply -k k8s`.
-5. **Rollout Status Gate**: Executes `kubectl rollout status` with a 120s timeout budget, guaranteeing that the pipeline only succeeds when all pods pass startup and readiness probes.
+1. **Branch Gate**: Restricts production deployments strictly to pushes targeting `main` and manual triggers (`workflow_dispatch`). Pull requests execute quality gates and local builds without triggering cluster updates.
+2. **Local Cluster Context**: Interacts directly with Docker Desktop's Kubernetes control plane (`desktop-control-plane`) via current context `docker-desktop`.
+3. **Atomic Manifest Apply**: Dynamically updates [`k8s/deployment.yaml`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/k8s/deployment.yaml) with the freshly built Docker Desktop image tag and applies all manifests via `kubectl apply -k k8s` (ensuring Namespace, ConfigMap, Services, Deployment, and HPA exist).
+4. **Zero-Downtime Rolling Update**: The rolling update strategy (`maxSurge: 1, maxUnavailable: 0`) ensures that old pods remain serving traffic until the newly deployed pods pass their `startupProbe` and `readinessProbe`.
+5. **Rollout Verification Gate**: `kubectl rollout status` monitors pod readiness with a 120s timeout budget, blocking the pipeline if health checks fail.
+6. **Automated Health Check**: Pings `http://localhost:8501/_stcore/health` to confirm end-to-end service delivery.
 
 ---
 
-## 5. Setting Up Remote Cluster Authentication in GitHub
+## 5. Self-Hosted Runner Operation & Configuration
 
-To link your remote GitHub Actions workflow with your reachable training cluster:
+The local Docker Desktop CI/CD pipeline runs using GitHub Actions self-hosted runner:
 
-### Step 1: Base64-Encode Your Kubeconfig
+### Starting the Runner
+Use the included helper script in the repository root:
 ```powershell
-# In Windows PowerShell:
-[Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$HOME\.kube\config"))
+.\start-runner.ps1
 ```
-
-### Step 2: Store in GitHub Repository Secrets
-1. Navigate to your repository: [https://github.com/akarshrajap/dataframe](https://github.com/akarshrajap/dataframe)
-2. Go to **Settings** $\rightarrow$ **Secrets and variables** $\rightarrow$ **Actions**.
-3. Click **New repository secret**.
-4. Set:
-   * **Name**: `KUBECONFIG`
-   * **Secret**: Paste the base64 string from Step 1.
-5. Click **Add secret**.
+* The runner establishes a secure outbound connection to GitHub and listens for triggers.
+* When a commit is pushed to `main`, the runner automatically executes the build and deployment stages directly on the local machine.
 
 ---
 

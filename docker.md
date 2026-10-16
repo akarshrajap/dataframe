@@ -284,3 +284,34 @@ docker rmi zomato-analysis-dashboard:latest
   ```powershell
   docker logs zomato_analytics_app
   ```
+
+---
+
+## 7. Docker Desktop as CI/CD Build Engine for Kubernetes
+
+In this project's automated DevOps pipeline, **Docker Desktop** is not merely a local test tool — it functions as the central **Build Engine** for GitHub Actions:
+
+```
++-----------------------------------------------------------------------------------------+
+|                                    WORKSTATION HOST                                     |
+|                                                                                         |
+|  +---------------------------+        +----------------------------------------------+  |
+|  | GitHub Self-Hosted Runner | -----> |             Docker Desktop Engine            |  |
+|  | (start-runner.ps1)        | Build  | - Local build context & pip wheel cache      |  |
+|  | Listens for git push      | Image  | - Builds: zomato-analysis-dashboard:sha-xxxx |  |
+|  +---------------------------+        +----------------------------------------------+  |
+|                                                               |                         |
+|                                                               v Directly Available      |
+|                                       +----------------------------------------------+  |
+|                                       |           Docker Desktop Kubernetes          |  |
+|                                       | - Pull Policy: IfNotPresent (Zero download)  |  |
+|                                       | - Zero-downtime rolling update               |  |
+|                                       | - LoadBalancer on http://localhost:8501      |  |
+|                                       +----------------------------------------------+  |
++-----------------------------------------------------------------------------------------+
+```
+
+### Why Building in Docker Desktop Accelerates Deployment:
+1. **Zero Network Latency**: Container layers are not pushed over the internet to an external registry and re-downloaded; they exist directly on the workstation disk.
+2. **Instant Kubernetes Availability**: Because Docker Desktop Kubernetes shares the local container engine, the cluster sees newly built images immediately.
+3. **Deterministic Tagging**: Every build is tagged with both `:latest` and `:sha-<commit-sha>`, preserving exact auditability.

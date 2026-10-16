@@ -261,3 +261,39 @@ kubectl delete -k k8s
 # Or using the cleanup script:
 .\cleanup-k8s.ps1
 ```
+
+---
+
+## 8. Automated CI/CD Continuous Deployment (Docker Desktop)
+
+The cluster receives automated rolling updates triggered directly by GitHub commits through the repository CI/CD pipeline ([`.github/workflows/ci-cd.yml`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/.github/workflows/ci-cd.yml)):
+
+```
++-------------------------------------------------------------------------------------------------+
+|                                 CONTINUOUS DELIVERY PIPELINE                                    |
+|                                                                                                 |
+|  [Git Commit Push]                                                                              |
+|         │                                                                                       |
+|         ▼                                                                                       |
+|  [Stage 1: Lint & Pytest] (Pass: Flake8 + Pytest on ubuntu-latest)                              |
+|         │                                                                                       |
+|         ▼                                                                                       |
+|  [Stage 2: Build Image in Docker Desktop] (self-hosted runner)                                   |
+|         │ Tags: zomato-analysis-dashboard:sha-<commit> & :latest                                |
+|         ▼                                                                                       |
+|  [Stage 3: Controlled K8s Deployment] (self-hosted runner)                                      |
+|         │ 1. Applies manifests via Kustomize (kubectl apply -k k8s)                             |
+|         │ 2. Updates container image to :sha-<commit>                                           |
+|         │ 3. Monitors zero-downtime rolling update (kubectl rollout status)                     |
+|         ▼                                                                                       |
+|  [Live Cluster Updated] -> LoadBalancer http://localhost:8501                                    |
++-------------------------------------------------------------------------------------------------+
+```
+
+### Key Deployment Characteristics:
+* **Zero Network Hop**: Docker Desktop's container engine builds the image locally. Kubernetes pulls the image instantly without an external registry (`imagePullPolicy: IfNotPresent`).
+* **Zero Downtime Guarantee**: The rolling update strategy (`maxSurge: 1, maxUnavailable: 0`) keeps active pods serving requests until replacement pods pass their `startupProbe` and `readinessProbe`.
+* **Traceable Rollbacks**: Each release is explicitly tagged with the Git commit short SHA, enabling single-command rollback:
+  ```powershell
+  kubectl rollout undo deployment/zomato-dashboard -n zomato-analytics
+  ```

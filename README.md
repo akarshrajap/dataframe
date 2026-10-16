@@ -290,10 +290,11 @@ pytest -v tests/
 
 ## 7. CI/CD Pipeline & Kubernetes Orchestration
 
-* **Continuous Integration**: Powered by GitHub Actions ([`.github/workflows/ci-cd.yml`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/.github/workflows/ci-cd.yml)), automatically executing Flake8 linting, dataset schema verification, and PyYAML manifest integrity checks.
-* **Continuous Delivery**: Container builds run via Docker Buildx with layer caching and publish tagged releases (`:latest`, `:sha-<commit>`) to GitHub Container Registry (`ghcr.io`).
-* **Controlled Deployment**: Triggers automated rolling updates, applying Kustomize manifests to the Kubernetes cluster and enforcing zero-downtime health gates via `kubectl rollout status`.
+* **Continuous Integration (Quality Gate)**: Powered by GitHub Actions ([`.github/workflows/ci-cd.yml`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/.github/workflows/ci-cd.yml)), automatically executing Flake8 linting, dataset schema verification, and PyYAML manifest integrity checks on `ubuntu-latest`.
+* **Container Build in Docker Desktop**: Automated builds execute directly inside the local **Docker Desktop** daemon via a self-hosted runner agent (`start-runner.ps1`), producing both `zomato-analysis-dashboard:latest` and immutable Git commit SHA tags (`:sha-<commit>`).
+* **Controlled Kubernetes Deployment**: Applies Kustomize manifests (`kubectl apply -k k8s`) directly to the Docker Desktop Kubernetes cluster, updates the container image to the newly created tag, and verifies zero-downtime health gates via `kubectl rollout status`.
 * **Documentation Guides**:
   * Complete CI/CD architecture and runbooks: [`CICD_PIPELINE.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/CICD_PIPELINE.md)
+  * GitHub & GitHub Actions operational manual: [`github.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/github.md)
   * Lightweight Kubernetes orchestration deep-dive: [`KUBERNETES.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/KUBERNETES.md)
   * Docker containerization specifications: [`docker.md`](file:///d:/Akarsh/Mysore_pythonDocker/data_analysis/docker.md)
