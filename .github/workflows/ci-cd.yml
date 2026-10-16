@@ -113,7 +113,10 @@ jobs:
     name: 03-Controlled-Kubernetes-Deployment
     needs: build-and-publish
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -131,7 +134,7 @@ jobs:
             chmod 600 $HOME/.kube/config
             echo "Authenticated to remote cluster via decoded KUBECONFIG secret."
           else
-            echo "WARNING: KUBECONFIG secret not detected; validating manifests via dry-run simulation."
+            echo "Using runner environment kubeconfig ($HOME/.kube/config)."
           fi
 
       - name: Update Deployment Image Tag via Kustomize
@@ -150,16 +153,10 @@ jobs:
 
       - name: Controlled Deployment Apply & Rollout Status
         run: |
-          if [ -f "$HOME/.kube/config" ] && [ -s "$HOME/.kube/config" ]; then
-            echo "Applying Kustomize manifests to cluster..."
-            kubectl apply -k k8s
-            echo "Awaiting zero-downtime rolling update completion..."
-            kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }} --timeout=120s
-            echo "Verifying active pods and services..."
-            kubectl get pods -n ${{ env.NAMESPACE }} -o wide
-            kubectl get svc -n ${{ env.NAMESPACE }}
-          else
-            echo "Validating k8s resources via Kustomize compilation..."
-            kubectl kustomize k8s > /dev/null
-            echo "Dry run validation successful: all manifests, selectors, and RBAC pass."
-          fi
+          echo "Applying Kustomize manifests to cluster..."
+          kubectl apply -k k8s
+          echo "Awaiting zero-downtime rolling update completion..."
+          kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }} --timeout=120s
+          echo "Verifying active pods and services..."
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+          kubectl get svc -n ${{ env.NAMESPACE }}

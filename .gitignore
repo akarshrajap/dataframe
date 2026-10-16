@@ -15,3 +15,7 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# GitHub Self-Hosted Runner artifacts
+actions-runner/
+*.zip

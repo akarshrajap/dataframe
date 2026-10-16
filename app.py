@@ -232,7 +232,7 @@ filtered_df = filter_zomato_data(
 # -----------------------------------------------------------------------------
 # 4. DASHBOARD HEADER & EXECUTIVE KPI METRIC CARDS
 # -----------------------------------------------------------------------------
-st.markdown('<div class="main-header">🍽️ Zomato2 Restaurant Intelligence Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🍽️ Zomato3 Restaurant Intelligence Dashboard</div>', unsafe_allow_html=True)
 st.markdown(
     f'<div class="sub-header">Analyzing dining economics, customer ratings, and channel fulfillment across Bangalore | Filtered: <b>{len(filtered_df):,}</b> of {len(df_raw):,} establishments</div>',
     unsafe_allow_html=True
