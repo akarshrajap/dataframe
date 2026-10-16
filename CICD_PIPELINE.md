@@ -23,23 +23,23 @@ flowchart TD
         C5["K8s Manifest PyYAML Validation (Pytest)"]
     end
 
-    subgraph Stage2["Stage 2: Container Release (02-Build-And-Publish)"]
-        B1["Docker Buildx Engine & QEMU"]
-        B2["Authenticate to GitHub Container Registry (ghcr.io)"]
-        B3["Semantic Tagging: :latest & :sha-xxxxxxx"]
-        B4["Multi-Stage Build with GitHub Layer Caching (type=gha)"]
-        B5["Push Immutable Image to GHCR"]
+    subgraph Stage2["Stage 2: Container Image Build (02-Build-In-Docker-Desktop)"]
+        B1["Self-Hosted Runner Execution (Windows / Docker Desktop)"]
+        B2["Semantic Tagging: :latest & :sha-xxxxxxx"]
+        B3["Native Docker Desktop Engine Layer Caching"]
+        B4["Build Immutable Image Directly into Docker Desktop"]
+        B5["Verify Image in Local Docker Daemon (docker images)"]
     end
 
     subgraph Stage3["Stage 3: Controlled Deployment (03-Controlled-Kubernetes-Deployment)"]
-        D1["Cluster Authentication (Decoded KUBECONFIG Secret)"]
-        D2["Kustomize Image Override (:sha-xxxxxxx)"]
+        D1["Direct Docker Desktop Cluster Context (desktop-control-plane)"]
+        D2["Kustomize Image Tag Override (:sha-xxxxxxx)"]
         D3["Atomic Manifest Apply (kubectl apply -k k8s)"]
         D4["Zero-Downtime Rollout Gate (kubectl rollout status)"]
         D5["Post-Deploy Telemetry & Health Probe Verification"]
     end
 
-    subgraph Target["Reachable Kubernetes Cluster (Docker Desktop / Kind / Cloud)"]
+    subgraph Target["Docker Desktop Kubernetes Cluster"]
         Node["desktop-control-plane"]
         NS["Namespace: zomato-analytics"]
         Pod1["Pod 1 (1/1 Ready)"]
@@ -49,7 +49,7 @@ flowchart TD
 
     Trigger --> Stage1
     Stage1 -->|Pass Quality Gate| Stage2
-    Stage2 -->|Image Published| Stage3
+    Stage2 -->|Image Built in Docker Desktop| Stage3
     Stage3 --> Target
     NS --> Pod1
     NS --> Pod2
@@ -73,24 +73,24 @@ flowchart TD
   * Parses all YAML manifests in `k8s/` using `PyYAML`.
   * Enforces container port `8501`, non-root user `appuser` (UID `1000`), resource requests/limits, and triple health probes (`startupProbe`, `livenessProbe`, `readinessProbe`).
 
-### Stage 2: Container Image Build & Publication (`02-Build-And-Publish`)
-* **Registry**: GitHub Container Registry (`ghcr.io`).
-* **Authentication**: Ephemeral `${{ secrets.GITHUB_TOKEN }}` with `packages: write` permissions (zero long-lived credentials).
+### Stage 2: Container Image Build in Docker Desktop (`02-Build-In-Docker-Desktop`)
+* **Environment**: `self-hosted` runner running directly on the host machine connected to Docker Desktop.
+* **Docker Daemon**: Interacts directly with Docker Desktop engine without network hops.
 * **Tagging Strategy**:
-  * Dual-tagging: `:latest` on default branch + `:sha-<7-char-commit-hash>` for deterministic traceability and rollbacks.
-* **Build Acceleration**: Uses Buildx GitHub Actions cache (`type=gha,mode=max`) to reuse identical Docker layers across pipeline runs.
+  * Dual-tagging: `zomato-analysis-dashboard:latest` + `zomato-analysis-dashboard:sha-<7-char-commit-hash>` for deterministic version tracking and instant rollbacks.
+* **Build Acceleration**: Leverages local Docker layer caching for ultra-fast rebuilds (< 5 seconds).
 
 ### Stage 3: Controlled Kubernetes Deployment (`03-Controlled-Kubernetes-Deployment`)
-* **Gated Execution**: Only runs on merges to `main` (pull requests execute stages 1 and 2 in build-only mode without pushing or deploying).
-* **Cluster Authentication**: Securely authenticates via base64-encoded `KUBECONFIG` stored in GitHub Actions Secrets.
-* **Dynamic Kustomize Image Patching**: Overrides image reference in `k8s/deployment.yaml` with the exact Git commit SHA tag published in Stage 2.
-* **Controlled Rolling Update**:
-  * Applies resources: `kubectl apply -k k8s`
+* **Environment**: `self-hosted` runner with native `kubectl` access to Docker Desktop Kubernetes cluster.
+* **Gated Execution**: Runs automatically on pushes to `main` and manual triggers (`workflow_dispatch`).
+* **Dynamic Image Patching**: Sets container image to the exact `sha-xxxxxxx` tag freshly built in Docker Desktop.
+* **Zero-Downtime Rolling Update**:
+  * Manifest apply: `kubectl apply -k k8s`
   * Rollout verification gate:
     ```bash
     kubectl rollout status deployment/zomato-dashboard -n zomato-analytics --timeout=120s
     ```
-  * Blocks pipeline if pods fail health checks within the timeout budget.
+  * Health verification against live pod endpoint `http://localhost:8501/_stcore/health`.
 
 ---
 

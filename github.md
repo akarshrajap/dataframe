@@ -60,17 +60,17 @@ flowchart TD
         C5["K8s Manifest PyYAML Integrity Validation (Pytest)"]
     end
 
-    subgraph Stage2["Stage 2: Container Release (02-Build-And-Publish)"]
-        B1["Docker Buildx & QEMU Engine Setup"]
-        B2["Zero-Secret GHCR Auth (secrets.GITHUB_TOKEN)"]
+    subgraph Stage2["Stage 2: Container Image Build (02-Build-In-Docker-Desktop)"]
+        B1["Self-Hosted Runner on Host (Windows / Docker Desktop)"]
+        B2["Local Docker Desktop Daemon Integration"]
         B3["Semantic Tagging: :latest & :sha-xxxxxxx"]
-        B4["Layer Caching (type=gha, mode=max)"]
-        B5["Publish Image to ghcr.io"]
+        B4["Layer Caching (Local Docker Cache)"]
+        B5["Build & Register Image in Docker Desktop"]
     end
 
     subgraph Stage3["Stage 3: Controlled K8s Deployment (03-Controlled-Kubernetes-Deployment)"]
-        D1["Cluster Authentication (Decoded KUBECONFIG)"]
-        D2["Kustomize Image Override (:sha-xxxxxxx)"]
+        D1["Direct Docker Desktop Cluster Context (desktop-control-plane)"]
+        D2["Deployment Manifest Image Override (:sha-xxxxxxx)"]
         D3["Atomic Manifest Apply (kubectl apply -k k8s)"]
         D4["Zero-Downtime Rollout Gate (kubectl rollout status)"]
         D5["Post-Deploy Pod Health Probe Verification"]
